@@ -22,18 +22,19 @@ const ci = process.argv.indexOf('--concurrency');
 if (ci > -1) CONC = Math.max(1, +process.argv[ci + 1] || 6);
 
 fs.mkdirSync(COVER_DIR, { recursive: true });
-const { items } = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'catalog.json'), 'utf8'));
+const { rows } = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'anime.json'), 'utf8'));
 
 const todo = [];
 let skippedExisting = 0;
-for (const it of items) {
-  const p = path.join(COVER_DIR, `${it.id}.jpg`);
-  if (it.nsfw) continue; // NSFW 不入库，页面走远程回退
+for (const r of rows) {
+  const id = r[0], nsfw = r[12];
+  const p = path.join(COVER_DIR, `${id}.jpg`);
+  if (nsfw) continue; // NSFW 不入库，页面走远程回退
   const st = fs.existsSync(p) ? fs.statSync(p) : null;
   if (st && st.size > 500) { skippedExisting++; continue; }
-  todo.push({ id: it.id, p });
+  todo.push({ id, p });
 }
-console.log(`total ${items.length} items | skip existing ${skippedExisting} | to fetch ${todo.length} (concurrency ${CONC})`);
+console.log(`total ${rows.length} items | skip existing ${skippedExisting} | to fetch ${todo.length} (concurrency ${CONC})`);
 
 let ok = 0, fail = 0, done = 0;
 const failures = [];
