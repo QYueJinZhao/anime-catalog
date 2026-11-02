@@ -115,6 +115,7 @@ footer{color:var(--fg3);font-size:12px;text-align:center;padding:30px 0 0}
 .l-org{font-size:11px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:1em}
 .l-meta{display:flex;gap:8px;flex-shrink:0;align-items:center;max-width:45%}
 .l-cat{font-size:11px;background:var(--bg2);border-radius:4px;padding:1px 6px;color:#bcd0ff;white-space:nowrap}
+.l-region{font-size:11px;color:#8fd3ff;white-space:nowrap}
 .l-year,.l-plat{font-size:11px;color:var(--fg2);white-space:nowrap}
 .l-tags{font-size:11px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
 @media(max-width:760px){.l-cat,.l-plat,.l-tags{display:none}}
@@ -135,6 +136,7 @@ footer{color:var(--fg3);font-size:12px;text-align:center;padding:30px 0 0}
   <div class="chips" id="catChips"></div>
   <div class="row2">
     <span class="meta" id="stat"></span>
+    <select id="region"><option value="">地区：全部</option></select>
     <select id="plat"><option value="">平台：全部</option></select>
     <select id="decade"><option value="">年代：全部</option></select>
     <select id="scoreGte"><option value="">评分：不限</option><option value="9">≥ 9.0</option><option value="8.5">≥ 8.5</option><option value="8">≥ 8.0</option><option value="7">≥ 7.0</option><option value="6">≥ 6.0</option></select>
@@ -187,7 +189,8 @@ const TYPE_LABEL = { anime: '动画', book: '书籍·漫画', music: '音乐', g
 const SHARDS = { anime: JSON.parse(document.getElementById('DATA-ANIME').textContent).rows };
 const $ = (s) => document.querySelector(s);
 const grid = $('#grid'), sentinel = $('#sentinel'), emptyEl = $('#empty'), stat = $('#stat');
-const state = { type: 'anime', q: '', cat: '', plat: '', decade: '', score: '', sort: 'rank', nsfw: false };
+const state = { type: 'anime', q: '', cat: '', plat: '', region: '', decade: '', score: '', sort: 'rank', nsfw: false };
+const REGION_LABEL = { ja: '日本', zh: '华语', us: '欧美', kr: '韩国', fr: '法国', '': '未知' };
 let filtered = [], shown = 0;
 const BATCH = 60;
 
@@ -216,8 +219,8 @@ tabsEl.addEventListener('click', async (e) => {
   const tab = e.target.closest('.tab'); if (!tab || tab.dataset.type === state.type) return;
   document.querySelectorAll('#typeTabs .tab').forEach((c) => c.classList.toggle('on', c === tab));
   state.type = tab.dataset.type;
-  state.cat = ''; state.plat = ''; state.decade = ''; state.score = '';
-  $('#plat').value = ''; $('#decade').value = ''; $('#scoreGte').value = '';
+  state.cat = ''; state.plat = ''; state.region = ''; state.decade = ''; state.score = '';
+  $('#plat').value = ''; $('#region').value = ''; $('#decade').value = ''; $('#scoreGte').value = '';
   if (!SHARDS[state.type]) {
     grid.innerHTML = '<div class="loading">正在加载' + TYPE_LABEL[state.type] + '分片（' + META.meta[state.type].toLocaleString() + ' 条）…首次约需数秒</div>';
     try {
@@ -232,7 +235,7 @@ tabsEl.addEventListener('click', async (e) => {
       return;
     }
   }
-  renderCatChips(); renderPlatOptions(); loadViewForType(); apply();
+  renderCatChips(); renderPlatOptions(); renderRegionOptions(); loadViewForType(); apply();
 });
 
 /* ---------- 分类 chips（按当前类型统计） ---------- */
@@ -263,6 +266,15 @@ function renderPlatOptions() {
   const decades = DECADES.slice(1).reverse();
   $('#decade').innerHTML = '<option value="">年代：全部</option>' + decades.map((d) => \`<option value="\${d}">\${d === '未知' ? '未知' : d.slice(0, -1) + ' 年代'}</option>\`).join('');
 }
+/* ---------- 地区选项（按当前类型统计） ---------- */
+function renderRegionOptions() {
+  const rows = rowsOf(state.type);
+  const order = ['ja', 'zh', 'us', 'kr', 'fr', ''];
+  const tally = {};
+  for (const r of rows) { const g = r[19] || ''; tally[g] = (tally[g] || 0) + 1; }
+  $('#region').innerHTML = '<option value="">地区：全部</option>' + order.filter((g) => tally[g])
+    .map((g) => \`<option value="\${g}">\${REGION_LABEL[g]} (\${tally[g].toLocaleString()})</option>\`).join('');
+}
 
 /* ---------- 筛选 / 排序 ---------- */
 let qNormCache = '';
@@ -270,6 +282,7 @@ function rowMatch(r) {
   if (!state.nsfw && r[12]) return false;
   if (state.cat && r[13] !== state.cat) return false;
   if (state.plat && r[5] !== state.plat) return false;
+  if (state.region && (r[19] || '') !== state.region) return false;
   if (state.decade) { if (!r[22]) r[22] = decadeOf(r[4]); if (r[22] !== state.decade) return false; }
   if (state.score && (r[6] || 0) < +state.score) return false;
   if (state.q) {
@@ -339,7 +352,7 @@ function lrowHTML(r) {
     \${cov}
     <span class="l-score">\${it.score ? it.score : '—'}</span>
     <div class="l-names"><div class="l-cn">\${esc(it.nameCn || it.name)}</div><div class="l-org">\${esc(it.nameCn && it.name !== it.nameCn ? it.name : '')}</div></div>
-    <div class="l-meta"><span class="l-cat">\${it.category}</span><span class="l-year">\${it.date ? it.date.slice(0, 4) : '—'}</span>\${it.platform ? '<span class="l-plat">' + esc(it.platform) + '</span>' : ''}<span class="l-tags">\${it.tags.slice(0, 3).map(esc).join(' · ')}</span></div>
+    <div class="l-meta"><span class="l-cat">\${it.category}</span>\${(r[19] || '') ? '<span class="l-region">' + REGION_LABEL[r[19]] + '</span>' : ''}<span class="l-year">\${it.date ? it.date.slice(0, 4) : '—'}</span>\${it.platform ? '<span class="l-plat">' + esc(it.platform) + '</span>' : ''}<span class="l-tags">\${it.tags.slice(0, 3).map(esc).join(' · ')}</span></div>
   </div>\`;
 }
 /* ---------- 显示模式：缩略图 / 列表（按类型记忆，音乐默认列表） ---------- */
@@ -427,7 +440,7 @@ $('#mClose').addEventListener('click', closeModal);
 /* ---------- 控件 ---------- */
 let deb;
 $('#q').addEventListener('input', (e) => { clearTimeout(deb); deb = setTimeout(() => { state.q = e.target.value.trim(); apply(); }, 150); });
-for (const [id, key] of [['plat', 'plat'], ['decade', 'decade'], ['scoreGte', 'score'], ['sort', 'sort']]) {
+for (const [id, key] of [['region', 'region'], ['plat', 'plat'], ['decade', 'decade'], ['scoreGte', 'score'], ['sort', 'sort']]) {
   $('#' + id).addEventListener('change', (e) => { state[key] = e.target.value; apply(); });
 }
 $('#lucky').addEventListener('click', () => { if (filtered.length) openModal(filtered[Math.floor(Math.random() * filtered.length)]); });
@@ -452,6 +465,7 @@ window.addEventListener('error', (e) => {
 });
 renderCatChips();
 renderPlatOptions();
+renderRegionOptions();
 loadViewForType();
 setNsfw(savedNsfw);
 </script>

@@ -16,6 +16,7 @@
  * [0]id [1]type [2]name [3]nameCn [4]date [5]platform [6]score(0=无) [7]rank(0=未排名)
  * [8]ratings [9]wish [10]done [11]doing [12]nsfw(0/1) [13]category
  * [14]tags('|') [15]tagCounts('|') [16]summary [17]aliases('|') [18]musicMeta(艺术家|作曲|作词，仅音乐)
+ * [19]region(ja/zh/us/kr/fr/''=未知)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -125,6 +126,42 @@ function musicMeta(ib) {
   return [get('艺术家'), get('作曲'), get('作词')].join('|');
 }
 
+/* ---------------- 国家/地区推断：ja 日本 / zh 华语 / us 欧美 / kr 韩国 / fr 法国 / '' 未知 ----------------
+   优先级：显式地区标签 > 平台编码（三次元剧集类）> 原名假名/谚文启发式 */
+const REGION_TAG_KEYS = {
+  zh: ['国产', '国漫', '国创', '中国动画', '中国制造', '上海美术电影制片厂', '华语', '中国大陆', '大陆', '香港', '香港电影', '台湾', '台湾动画', '宝岛', '中国', '国产动画', '国产动画电影'],
+  us: ['美国', '美漫', '欧美', '迪士尼', '皮克斯', '漫威', '梦工厂', '好莱坞', '美国动画', 'DC漫画', 'Marvel', 'Pixar', 'Disney', '欧美动画', '欧美电影'],
+  kr: ['韩国', '韩漫', '韩剧', '网漫', 'webtoon', 'Webtoon', 'WEBTOON', '웹툰', '韩国动画'],
+  fr: ['法国', '法语', '法国动画', '欧漫', '比利时', 'bande dessinée', 'French'],
+  ja: ['日本', '日漫', '日本动画', 'アニメ', '日本电影', '日本製'],
+};
+const REGION_PLATFORM = { real: { 1: 'ja', 2: 'us', 3: 'zh', 6001: 'kr' } };
+/* 风格类标签不算来源：「中国风」常挂在日本作品上（十二国记/药屋/彩云国） */
+const REGION_TAG_EXCLUDE = { zh: [/^中国风/, /^中国風/, /^中华风/], us: [/^欧美风/], ja: [/^日式/, /^和风/] };
+const KANA_RE = /[\u3040-\u30ff\u31f0-\u31ff]/; // 假名（含片假名扩展）
+const HANGUL_RE = /[\uac00-\ud7af]/;
+
+function inferRegion(typeName, platformCode, tags, name) {
+  // 1. 地区标签（按权重：出现即计，先 zh/us/kr/fr 后 ja——ja 标签太泛，只在无其它信号时兜底）
+  const scores = { ja: 0, zh: 0, us: 0, kr: 0, fr: 0 };
+  for (const t of tags) {
+    for (const [reg, keys] of Object.entries(REGION_TAG_KEYS)) {
+      if (REGION_TAG_EXCLUDE[reg]?.some((re) => re.test(t.name))) continue;
+      if (keys.some((k) => t.name === k || t.name.includes(k))) scores[reg] += t.count;
+    }
+  }
+  const nonJa = ['zh', 'us', 'kr', 'fr'].filter((r) => scores[r] > 0);
+  if (nonJa.length) return nonJa.sort((a, b) => scores[b] - scores[a])[0];
+  if (scores.ja > 0) return 'ja';
+  // 2. 平台编码（三次元 日剧/欧美剧/华语剧/韩剧）
+  const byPlat = REGION_PLATFORM[typeName]?.[platformCode];
+  if (byPlat) return byPlat;
+  // 3. 文字系统启发式
+  if (KANA_RE.test(name)) return 'ja';
+  if (HANGUL_RE.test(name)) return 'kr';
+  return '';
+}
+
 /* ---------------- 主流程 ---------------- */
 const input = fs.createReadStream(SRC, { encoding: 'utf8' });
 const rl = readline.createInterface({ input, crlfDelay: Infinity });
@@ -175,6 +212,7 @@ for await (const line of rl) {
     keepSummary ? cleanSummary(s.summary).slice(0, 400) : '',
     aliases.join('|'),
     tname === 'music' ? musicMeta(s.infobox) : '',
+    inferRegion(tname, s.platform, rawTags, s.name || ''),
   ]);
 }
 
