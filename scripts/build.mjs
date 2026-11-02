@@ -15,7 +15,7 @@
  * 行格式（数组，节省内存；页面上位解析）:
  * [0]id [1]type [2]name [3]nameCn [4]date [5]platform [6]score(0=无) [7]rank(0=未排名)
  * [8]ratings [9]wish [10]done [11]doing [12]nsfw(0/1) [13]category
- * [14]tags('|') [15]tagCounts('|') [16]summary [17]aliases('|')
+ * [14]tags('|') [15]tagCounts('|') [16]summary [17]aliases('|') [18]musicMeta(艺术家|作曲|作词，仅音乐)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,7 +36,14 @@ const MAX_TAGS = 12;
 const TYPE_NAMES = { 1: 'book', 2: 'anime', 3: 'music', 4: 'game', 6: 'real' };
 
 /* ---------------- 标签 → 分类映射（bgm.tv 跨类型高频标签） ---------------- */
+/* 音乐专用分类放最前（音乐类型标签多为作品/人名，优先锚定类型词） */
 const CATEGORY_MAP = [
+  ['VOCALOID', ['Vocaloid', 'VOCALOID', 'vocaloid', 'V家', 'v家', '初音ミク', '初音未来', '镜音', '巡音', 'megpoid', 'GUMI']],
+  ['原声·OST', ['OST', 'サントラ', 'サウンドトラック', '原声集', '原声带', 'soundtrack', '游戏原声', '音乐原声', 'オリジナルサウンド']],
+  ['广播剧·音声', ['ドラマCD', '广播剧', '音声', 'ASMR', 'Drama CD', '广播剧CD']],
+  ['角色歌·单曲', ['角色歌', 'キャラソン', '单曲', 'シングル', '印象曲', '主题歌', '片头曲', '片尾曲', '插曲', '印象专辑']],
+  ['演唱会·Live', ['演唱会', 'ライブ', '感謝祭', '音乐会', 'LIVE', 'Live']],
+  ['同人音乐', ['同人音乐', '同人音声', 'doujin music']],
   ['热血战斗', ['热血', '战斗', '动作', '格斗', '决斗', '超能力', '剑戟', '武力']],
   ['科幻', ['科幻', 'SF', '赛博朋克', '太空', '宇宙', '时间旅行', '末世', '人工智能', '机器人', '机甲', '高达', '机战', '大机器人', '军事']],
   ['奇幻', ['奇幻', '魔幻', '魔法', '异世界', '魔法少女', '童话', '神话', '妖怪', '转生', '龙', '骑士与魔法', '西式奇幻', '冒险']],
@@ -108,6 +115,16 @@ function cleanSummary(s) {
   return String(s || '').replace(/\s+/g, ' ').trim();
 }
 
+/* 音乐 infobox 提取：艺术家|作曲|作词（各取首行，缺省空串） */
+function musicMeta(ib) {
+  const box = String(ib || '');
+  const get = (key) => {
+    const m = box.match(new RegExp('^\\|\\s*' + key + '\\s*=\\s*(.*)$', 'm'));
+    return m ? m[1].replace(/\s+/g, ' ').trim().slice(0, 100) : '';
+  };
+  return [get('艺术家'), get('作曲'), get('作词')].join('|');
+}
+
 /* ---------------- 主流程 ---------------- */
 const input = fs.createReadStream(SRC, { encoding: 'utf8' });
 const rl = readline.createInterface({ input, crlfDelay: Infinity });
@@ -157,6 +174,7 @@ for await (const line of rl) {
     rawTags.map((t) => t.count).join('|'),
     keepSummary ? cleanSummary(s.summary).slice(0, 400) : '',
     aliases.join('|'),
+    tname === 'music' ? musicMeta(s.infobox) : '',
   ]);
 }
 

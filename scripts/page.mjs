@@ -100,6 +100,24 @@ select{background:var(--bg2);border:1px solid var(--line);border-radius:8px;colo
 footer{color:var(--fg3);font-size:12px;text-align:center;padding:30px 0 0}
 .kbd{background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
 .empty{padding:60px 0;text-align:center;color:var(--fg3)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:var(--bg2);border:none;color:var(--fg2);padding:8px 12px;font-size:13px;cursor:pointer}
+.seg button:hover{color:var(--fg)}
+.seg button.on{background:var(--acc);color:#fff}
+.grid.list{display:flex;flex-direction:column;gap:6px}
+.lrow{display:flex;align-items:center;gap:10px;padding:6px 12px 6px 8px;background:var(--card);border:1px solid var(--line);border-radius:8px;cursor:pointer;transition:border-color .12s}
+.lrow:hover{border-color:var(--acc)}
+.l-cov{width:34px;height:46px;object-fit:cover;border-radius:4px;flex-shrink:0;background:var(--bg2)}
+.l-cov.ph{display:flex;align-items:center;justify-content:center;color:var(--fg3);font-size:16px}
+.l-score{font-size:13px;font-weight:600;color:var(--acc2);width:36px;text-align:right;flex-shrink:0}
+.l-names{flex:1;min-width:0}
+.l-cn{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.l-org{font-size:11px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:1em}
+.l-meta{display:flex;gap:8px;flex-shrink:0;align-items:center;max-width:45%}
+.l-cat{font-size:11px;background:var(--bg2);border-radius:4px;padding:1px 6px;color:#bcd0ff;white-space:nowrap}
+.l-year,.l-plat{font-size:11px;color:var(--fg2);white-space:nowrap}
+.l-tags{font-size:11px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+@media(max-width:760px){.l-cat,.l-plat,.l-tags{display:none}}
 </style>
 </head>
 <body>
@@ -128,6 +146,9 @@ footer{color:var(--fg3);font-size:12px;text-align:center;padding:30px 0 0}
       <option value="date">日期 新→旧</option>
       <option value="dateAsc">日期 旧→新</option>
     </select>
+    <div class="seg" id="viewSeg" title="显示模式（按类型记忆）">
+      <button id="viewGrid">⬛ 缩略图</button><button id="viewList">☰ 列表</button>
+    </div>
   </div>
   <div class="banner" id="banner"></div>
 </div>
@@ -150,7 +171,7 @@ footer{color:var(--fg3);font-size:12px;text-align:center;padding:30px 0 0}
     <div class="m-body">
       <div class="m-tags" id="mTags"></div>
       <div class="m-sum" id="mSum"></div>
-      <div class="m-links"><a id="mLink" target="_blank" rel="noopener">在 bangumi.tv 打开 ↗</a></div>
+      <div class="m-links"><a id="mLink" target="_blank" rel="noopener">在 bangumi.tv 打开 ↗</a><a id="mLyric" target="_blank" rel="noopener" style="display:none"></a></div>
     </div>
   </div>
 </div>
@@ -159,7 +180,7 @@ footer{color:var(--fg3);font-size:12px;text-align:center;padding:30px 0 0}
 <script>
 /* ---------- 数据层：行式数组 [0]id [1]type [2]name [3]nameCn [4]date [5]platform [6]score [7]rank
    [8]ratings [9]wish [10]done [11]doing [12]nsfw [13]category [14]tags [15]tagCounts [16]summary [17]aliases
-   [18]=搜索缓存 [19]=年代缓存 ---------- */
+   [18]musicMeta(艺术家|作曲|作词) [21]=搜索缓存(运行时) [22]=年代缓存(运行时) ---------- */
 const META = JSON.parse(document.getElementById('DATA-META').textContent);
 const COVER_IDS = new Set(META.coverIds);
 const TYPE_LABEL = { anime: '动画', book: '书籍·漫画', music: '音乐', game: '游戏', real: '三次元' };
@@ -211,7 +232,7 @@ tabsEl.addEventListener('click', async (e) => {
       return;
     }
   }
-  renderCatChips(); renderPlatOptions(); apply();
+  renderCatChips(); renderPlatOptions(); loadViewForType(); apply();
 });
 
 /* ---------- 分类 chips（按当前类型统计） ---------- */
@@ -249,11 +270,11 @@ function rowMatch(r) {
   if (!state.nsfw && r[12]) return false;
   if (state.cat && r[13] !== state.cat) return false;
   if (state.plat && r[5] !== state.plat) return false;
-  if (state.decade) { if (!r[19]) r[19] = decadeOf(r[4]); if (r[19] !== state.decade) return false; }
+  if (state.decade) { if (!r[22]) r[22] = decadeOf(r[4]); if (r[22] !== state.decade) return false; }
   if (state.score && (r[6] || 0) < +state.score) return false;
   if (state.q) {
-    if (r[18] === undefined) r[18] = norm(r[2] + ' ' + r[3] + ' ' + r[14] + ' ' + r[17] + ' ' + r[4]);
-    if (!r[18].includes(qNormCache)) return false;
+    if (r[21] === undefined) r[21] = norm(r[2] + ' ' + r[3] + ' ' + r[14] + ' ' + r[17] + ' ' + r[18] + ' ' + r[4]);
+    if (!r[21].includes(qNormCache)) return false;
   }
   return true;
 }
@@ -284,13 +305,20 @@ function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 function row2obj(r) {
   return { id: r[0], type: r[1], name: r[2], nameCn: r[3], date: r[4], platform: r[5], score: r[6], rank: r[7],
     ratings: r[8], wish: r[9], done: r[10], doing: r[11], nsfw: !!r[12], category: r[13],
-    tags: split(r[14]), tagCounts: split(r[15]).map(Number), summary: r[16], aliases: split(r[17]) };
+    tags: split(r[14]), tagCounts: split(r[15]).map(Number), summary: r[16], aliases: split(r[17]), meta: r[18] || '' };
 }
 function cardHTML(r) {
+  return view === 'list' ? lrowHTML(r) : gridCardHTML(r);
+}
+function gridCardHTML(r) {
   const it = row2obj(r);
-  const cover = it.nsfw && !state.nsfw ? '' : \`<img loading="lazy" referrerpolicy="no-referrer" src="\${imgURL(it.id)}" alt="" onerror="onCoverError(this,\${it.id})">\`;
+  const isMusic = it.type === 'music';
+  let cover;
+  if (it.nsfw && !state.nsfw) cover = '<div class="nsfw-cover">R18 · 隐藏</div>';
+  else if (isMusic) cover = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--fg3);font-size:38px">♪</div>';
+  else cover = \`<img loading="lazy" referrerpolicy="no-referrer" src="\${imgURL(it.id)}" alt="" onerror="onCoverError(this,\${it.id})">\`;
   return \`<div class="card" data-id="\${it.id}">
-    <div class="cover">\${it.nsfw && !state.nsfw ? '<div class="nsfw-cover">R18 · 隐藏</div>' : cover}<span class="score">\${it.score ? it.score : '—'}</span></div>
+    <div class="cover">\${cover}<span class="score">\${it.score ? it.score : '—'}</span></div>
     <div class="info">
       <div class="t-cn">\${esc(it.nameCn || it.name)}</div>
       <div class="t-org">\${esc(it.nameCn && it.name !== it.nameCn ? it.name : '')}</div>
@@ -299,6 +327,39 @@ function cardHTML(r) {
     </div>
   </div>\`;
 }
+function lrowHTML(r) {
+  const it = row2obj(r);
+  const isMusic = it.type === 'music';
+  const cov = it.nsfw && !state.nsfw
+    ? '<div class="l-cov ph">R18</div>'
+    : isMusic
+      ? '<div class="l-cov ph">♪</div>'
+      : \`<img class="l-cov" loading="lazy" referrerpolicy="no-referrer" src="\${imgURL(it.id)}" alt="" onerror="onCoverError(this,\${it.id})">\`;
+  return \`<div class="lrow" data-id="\${it.id}">
+    \${cov}
+    <span class="l-score">\${it.score ? it.score : '—'}</span>
+    <div class="l-names"><div class="l-cn">\${esc(it.nameCn || it.name)}</div><div class="l-org">\${esc(it.nameCn && it.name !== it.nameCn ? it.name : '')}</div></div>
+    <div class="l-meta"><span class="l-cat">\${it.category}</span><span class="l-year">\${it.date ? it.date.slice(0, 4) : '—'}</span>\${it.platform ? '<span class="l-plat">' + esc(it.platform) + '</span>' : ''}<span class="l-tags">\${it.tags.slice(0, 3).map(esc).join(' · ')}</span></div>
+  </div>\`;
+}
+/* ---------- 显示模式：缩略图 / 列表（按类型记忆，音乐默认列表） ---------- */
+const VIEW_KEY = (t) => 'catalog-view:' + t;
+const defaultView = (t) => (t === 'music' ? 'list' : 'grid');
+let view = 'grid';
+function loadViewForType() {
+  view = localStorage.getItem(VIEW_KEY(state.type)) || defaultView(state.type);
+  $('#grid').classList.toggle('list', view === 'list');
+  $('#viewGrid').classList.toggle('on', view === 'grid');
+  $('#viewList').classList.toggle('on', view === 'list');
+}
+function setView(v) {
+  view = v;
+  localStorage.setItem(VIEW_KEY(state.type), v);
+  loadViewForType();
+  apply();
+}
+$('#viewGrid').addEventListener('click', () => { if (view !== 'grid') setView('grid'); });
+$('#viewList').addEventListener('click', () => { if (view !== 'list') setView('list'); });
 function loadMore() {
   const frag = document.createDocumentFragment();
   const next = Math.min(shown + BATCH, filtered.length);
@@ -322,24 +383,33 @@ function openModal(r) {
   img.style.display = it.nsfw && !state.nsfw ? 'none' : 'block';
   img.onerror = () => onCoverError(img, it.id);
   img.src = it.nsfw && !state.nsfw ? '' : imgLarge(it.id);
-  $('#mFacts').innerHTML = [
+  const facts = [
     \`<span>⭐ <b>\${it.score || '—'}</b> / 10</span>\`,
     \`<span>排名 \${it.rank || '—'}</span>\`,
     \`<span>\${it.ratings.toLocaleString()} 人评分</span>\`,
     it.platform ? \`<span>\${esc(it.platform)}</span>\` : '',
     \`<span>\${it.date || '日期未知'}</span>\`,
     \`<span>想看 \${it.wish.toLocaleString()} · 看过 \${it.done.toLocaleString()} · 在看 \${it.doing.toLocaleString()}</span>\`,
-  ].join('');
+  ];
+  if (it.type === 'music' && it.meta) {
+    const labels = ['艺术家', '作曲', '作词'];
+    it.meta.split('|').forEach((v, i) => { if (v) facts.push(\`<span>\${labels[i]}：\${esc(v)}</span>\`); });
+  }
+  $('#mFacts').innerHTML = facts.join('');
   $('#mTags').innerHTML = it.tags.map((t, i) => \`<span class="chip" data-tag="\${esc(t)}">\${esc(t)} <span class="n">\${it.tagCounts[i]}</span></span>\`).join('');
   $('#mSum').textContent = it.summary || '（无简介，可在 bangumi.tv 查看完整信息）';
+  const musicTitle = it.nameCn || it.name;
   $('#mLink').href = 'https://bgm.tv/subject/' + it.id;
+  $('#mLyric').style.display = it.type === 'music' ? 'inline' : 'none';
+  $('#mLyric').href = 'https://music.163.com/#/search/m/?s=' + encodeURIComponent(musicTitle) + '&type=1';
+  $('#mLyric').textContent = '歌词搜索（网易云音乐）↗';
   $('#mask').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
 function closeModal() { $('#mask').classList.remove('open'); document.body.style.overflow = ''; }
 
 grid.addEventListener('click', (e) => {
-  const card = e.target.closest('.card');
+  const card = e.target.closest('.card,.lrow');
   if (!card) return;
   const row = rowsOf(state.type).find((x) => x[0] === +card.dataset.id);
   if (row) openModal(row);
@@ -382,6 +452,7 @@ window.addEventListener('error', (e) => {
 });
 renderCatChips();
 renderPlatOptions();
+loadViewForType();
 setNsfw(savedNsfw);
 </script>
 </body>
