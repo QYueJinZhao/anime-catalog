@@ -8,6 +8,8 @@
 
 在线打开 <https://qyuejinzhao.github.io/anime-catalog/>，或本地双击 `serve.bat` 后访问 <http://localhost:8792>。
 
+**对外分享用 [lite.html](https://qyuejinzhao.github.io/anime-catalog/lite.html)（公开精简版）**：NSFW 条目在数据与界面两个层面彻底剔除、无开关，页签计数为 SFW 口径（动画 28,801 / 书籍 41 万 / 音乐 10.1 万 / 游戏 9.2 万 / 三次元 2.7 万），适合直接发链接。主站 index.html 的 NSFW 默认隐藏但保留开关。注意 lite 与主站共用同一批 `data/*.json` 分片（分片文件本身仍含 NSFW 行，仅页面不渲染）。
+
 - **类型 tab**：动画 31,258 / 书籍·漫画 422,971 / 音乐 101,230 / 游戏 117,881 / 三次元 26,768（后四类按需懒加载分片）
 - **显示模式**：⬛ 缩略图 / ☰ 列表 可切换并按类型记忆；**音乐默认列表模式且不显示封面**（bgm 音乐条目封面无意义），其余类型默认缩略图
 - **音乐**：专用分类（原声·OST / 角色歌·单曲 / 同人音乐 / VOCALOID / 广播剧·音声 / 演唱会·Live）；详情弹窗显示**艺术家 / 作曲 / 作词**（提取自 infobox，44k+ 条有艺术家），并提供**歌词搜索（网易云音乐）**直链——bgm 数据本身无歌词文本（infobox 覆盖率仅 0.6%），故不做站内歌词
@@ -26,6 +28,7 @@
 
 ```
 index.html               # 单文件浏览页（动画分片内联 20MB，其余类型懒加载）
+lite.html                # 公开精简版（NSFW 全剔除、无开关，18.6MB）
 serve.bat                # 本地静态服务器 :8792（file:// 看非动画类型必备）
 data/anime.json          # 动画 31,258 条（含简介/别名）
 data/book.json           # 书籍·漫画 422,971 条（60MB）
@@ -52,8 +55,9 @@ scripts/fetch-covers.mjs # 批量下载动画封面（断点续跑，NSFW 跳过
 # 1. 下载最新 dump（bangumi/Archive releases 的 dump-*.zip，约 430MB），只解压 subject.jsonlines
 # 2. 全类型筛选 + 分类（→ data/*.json）
 node scripts/build.mjs <subject.jsonlines 路径>
-# 3. 生成单文件页面（→ index.html）
+# 3. 生成单文件页面（→ index.html；--lite 追加生成公开精简版 lite.html）
 node scripts/page.mjs
+node scripts/page.mjs --lite
 # 4. 批量下载动画封面（断点续跑）
 node scripts/fetch-covers.mjs --concurrency 6
 ```

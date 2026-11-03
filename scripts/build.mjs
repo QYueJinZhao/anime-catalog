@@ -226,8 +226,8 @@ for (const [tname, rows] of Object.entries(buckets)) {
   const file = path.join(outDir, `${tname}.json`);
   const payload = JSON.stringify({ v: 2, type: tname, rows });
   fs.writeFileSync(file, payload, 'utf8');
-  meta[tname] = rows.length;
-  console.log(`${tname}: ${rows.length} rows → ${path.basename(file)} (${(fs.statSync(file).size / 1048576).toFixed(1)} MB)`);
+  meta[tname] = { total: rows.length, sfw: rows.filter((r) => !r[12]).length };
+  console.log(`${tname}: ${rows.length} rows (sfw ${meta[tname].sfw}) → ${path.basename(file)} (${(fs.statSync(file).size / 1048576).toFixed(1)} MB)`);
 }
 fs.writeFileSync(path.join(outDir, 'meta.json'), JSON.stringify(meta), 'utf8');
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * anime-catalog page generator (v2 全类型)
- * 用法: node scripts/page.mjs
+ * 用法: node scripts/page.mjs [--lite]
  * 读取 data/anime.json（内联，保证 file:// 双击可用）+ data/meta.json + covers/ 目录
  * 生成 index.html：类型 tab + 分片懒加载 + 行式紧凑数据
+ * --lite: 生成 lite.html 公开精简版（NSFW 条目彻底剔除、无 NSFW 开关，页签计数用 SFW 口径）
  */
 import fs from 'node:fs';
 import path from 'path';
@@ -11,15 +12,17 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+const LITE = process.argv.includes('--lite');
 
-const anime = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'anime.json'), 'utf8'));
+const animeRaw = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'anime.json'), 'utf8'));
+if (LITE) animeRaw.rows = animeRaw.rows.filter((r) => !r[12]);
 const meta = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'meta.json'), 'utf8'));
 const coverIds = fs.readdirSync(path.join(ROOT, 'covers'))
   .filter((f) => f.endsWith('.jpg'))
   .map((f) => +f.replace('.jpg', ''));
 
-const inline = JSON.stringify(anime).replace(/</g, '\\u003c').replace(/\u2028|\u2029/g, (m) => '\\u' + m.charCodeAt(0).toString(16).padStart(4, '0'));
-const totalAll = Object.values(meta).reduce((a, b) => a + b, 0);
+const inline = JSON.stringify(animeRaw).replace(/</g, '\\u003c').replace(/\u2028|\u2029/g, (m) => '\\u' + m.charCodeAt(0).toString(16).padStart(4, '0'));
+const totalAll = Object.values(meta).reduce((a, b) => a + (LITE ? b.sfw : b.total), 0);
 const genDate = new Date().toISOString().slice(0, 10);
 
 const html = `<!DOCTYPE html>
@@ -124,13 +127,13 @@ footer{color:var(--fg3);font-size:12px;text-align:center;padding:30px 0 0}
 <body>
 <div class="wrap">
 <header>
-  <h1>找番库 <small>全类型目录 · ${totalAll.toLocaleString()} 条目 · 数据源 bangumi/Archive（周更全量 dump）· 生成于 ${genDate}</small></h1>
+  <h1>找番库 <small>全类型目录 · ${totalAll.toLocaleString()} 条目${LITE ? ' · 公开精简版（不含 NSFW）' : ''} · 数据源 bangumi/Archive（周更全量 dump）· 生成于 ${genDate}</small></h1>
 </header>
 <div class="controls">
   <div class="searchrow">
     <input id="q" type="search" placeholder="搜索：原名 / 中文名 / 标签 / 年份…">
     <button class="btn primary" id="lucky" title="从当前筛选结果里随机抽一个">🎲 随机一部</button>
-    <button class="btn" id="nsfwToggle" title="默认隐藏 NSFW 条目">NSFW：隐藏</button>
+    ${LITE ? '' : '<button class="btn" id="nsfwToggle" title="默认隐藏 NSFW 条目">NSFW：隐藏</button>'}
   </div>
   <div class="tabs" id="typeTabs"></div>
   <div class="chips" id="catChips"></div>
@@ -184,6 +187,7 @@ footer{color:var(--fg3);font-size:12px;text-align:center;padding:30px 0 0}
    [8]ratings [9]wish [10]done [11]doing [12]nsfw [13]category [14]tags [15]tagCounts [16]summary [17]aliases
    [18]musicMeta(艺术家|作曲|作词) [21]=搜索缓存(运行时) [22]=年代缓存(运行时) ---------- */
 const META = JSON.parse(document.getElementById('DATA-META').textContent);
+const LITE = ${LITE};
 const COVER_IDS = new Set(META.coverIds);
 const TYPE_LABEL = { anime: '动画', book: '书籍·漫画', music: '音乐', game: '游戏', real: '三次元' };
 const SHARDS = { anime: JSON.parse(document.getElementById('DATA-ANIME').textContent).rows };
@@ -214,7 +218,7 @@ function rowsOf(type) { return SHARDS[type] || null; }
 /* ---------- 类型 tab ---------- */
 const tabsEl = $('#typeTabs');
 tabsEl.innerHTML = Object.entries(META.meta).map(([t, n]) =>
-  \`<span class="tab\${t === state.type ? ' on' : ''}" data-type="\${t}">\${TYPE_LABEL[t]} <span class="n">\${n.toLocaleString()}</span></span>\`).join('');
+  \`<span class="tab\${t === state.type ? ' on' : ''}" data-type="\${t}">\${TYPE_LABEL[t]} <span class="n">\${(LITE ? n.sfw : n.total).toLocaleString()}</span></span>\`).join('');
 tabsEl.addEventListener('click', async (e) => {
   const tab = e.target.closest('.tab'); if (!tab || tab.dataset.type === state.type) return;
   document.querySelectorAll('#typeTabs .tab').forEach((c) => c.classList.toggle('on', c === tab));
@@ -222,7 +226,7 @@ tabsEl.addEventListener('click', async (e) => {
   state.cat = ''; state.plat = ''; state.region = ''; state.decade = ''; state.score = '';
   $('#plat').value = ''; $('#region').value = ''; $('#decade').value = ''; $('#scoreGte').value = '';
   if (!SHARDS[state.type]) {
-    grid.innerHTML = '<div class="loading">正在加载' + TYPE_LABEL[state.type] + '分片（' + META.meta[state.type].toLocaleString() + ' 条）…首次约需数秒</div>';
+    grid.innerHTML = '<div class="loading">正在加载' + TYPE_LABEL[state.type] + '分片（' + (LITE ? META.meta[state.type].sfw : META.meta[state.type].total).toLocaleString() + ' 条）…首次约需数秒</div>';
     try {
       const res = await fetch('data/' + state.type + '.json');
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -307,9 +311,12 @@ function apply() {
   shown = 0;
   grid.innerHTML = '';
   emptyEl.style.display = filtered.length ? 'none' : 'block';
-  stat.textContent = filtered.length === rows.length
-    ? TYPE_LABEL[state.type] + ' ' + rows.length.toLocaleString() + ' 条'
-    : '命中 ' + filtered.length.toLocaleString() + ' / ' + rows.length.toLocaleString() + ' 条';
+  const denom = LITE
+    ? (rows.__sfw ??= rows.reduce((a, r) => a + (!r[12] ? 1 : 0), 0))
+    : rows.length;
+  stat.textContent = filtered.length === denom
+    ? TYPE_LABEL[state.type] + ' ' + denom.toLocaleString() + ' 条'
+    : '命中 ' + filtered.length.toLocaleString() + ' / ' + denom.toLocaleString() + ' 条';
   loadMore();
 }
 
@@ -452,7 +459,8 @@ function setNsfw(v) {
   $('#nsfwToggle').classList.toggle('primary', v);
   apply();
 }
-$('#nsfwToggle').addEventListener('click', () => setNsfw(!state.nsfw));
+const nsfwBtn = $('#nsfwToggle');
+if (nsfwBtn) nsfwBtn.addEventListener('click', () => setNsfw(!state.nsfw));
 document.addEventListener('keydown', (e) => {
   if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); }
   if (e.key === 'Escape') closeModal();
@@ -467,12 +475,12 @@ renderCatChips();
 renderPlatOptions();
 renderRegionOptions();
 loadViewForType();
-setNsfw(savedNsfw);
+if (LITE) { state.nsfw = false; } else { setNsfw(savedNsfw); }
 </script>
 </body>
 </html>
 `;
 
-const out = path.join(ROOT, 'index.html');
+const out = path.join(ROOT, LITE ? 'lite.html' : 'index.html');
 fs.writeFileSync(out, html, 'utf8');
 console.log('wrote ' + out + ' (' + (fs.statSync(out).size / 1048576).toFixed(1) + ' MB)');
